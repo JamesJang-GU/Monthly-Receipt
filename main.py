@@ -134,7 +134,7 @@ with out.open("rb") as f:
     s.raise_for_status()
 
 # ③ 페이지 생성 — 스크린샷의 속성 그대로
-TITLE_PROP = os.environ.get("NOTION_TITLE_PROP", "이름")   # 👈 DB의 Title 속성명 (다르면 Secret으로 덮어쓰기)
+TITLE_PROP = "목표"
 
 properties = {
     TITLE_PROP:  {"title": [{"text": {"content": PAGE_TITLE}}]},
