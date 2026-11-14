@@ -10,8 +10,8 @@ from PIL import Image, ImageDraw, ImageFont
 
 # ============ 0. 날짜 ============
 now = datetime.datetime.now(ZoneInfo("Asia/Seoul"))
-month = int(os.environ["FORCE_MONTH"]) if os.environ.get("FORCE_MONTH") else now.month
-year = int(os.environ.get("FORCE_YEAR", now.year))
+month = now.month   # 실행 시점의 월 (KST)
+year = now.year     # 실행 시점의 연도
 
 last_day = calendar.monthrange(year, month)[1]
 due_date = f"{year}.{month:02d}.{last_day:02d}"      # 명세서 이미지용 납기일
