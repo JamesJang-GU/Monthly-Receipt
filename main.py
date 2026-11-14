@@ -8,23 +8,25 @@ from zoneinfo import ZoneInfo
 import requests
 from PIL import Image, ImageDraw, ImageFont
 
-# ============ 0. 날짜: 매월 13일 실행 → 해당 월 + 그 달의 마지막 날 ============
+# ============ 0. 날짜 ============
 now = datetime.datetime.now(ZoneInfo("Asia/Seoul"))
 month = int(os.environ["FORCE_MONTH"]) if os.environ.get("FORCE_MONTH") else now.month
 year = int(os.environ.get("FORCE_YEAR", now.year))
 
-last_day = calendar.monthrange(year, month)[1]        # 👈 마지막 날 (윤년 자동)
-due_date = f"{year}.{month:02d}.{last_day:02d}"       # 예: 2026.10.31 / 2025.02.28
-TITLE = f"[KT] {month}월 명세서"                      # 예: [KT] 10월 명세서
+last_day = calendar.monthrange(year, month)[1]
+due_date = f"{year}.{month:02d}.{last_day:02d}"      # 명세서 이미지용 납기일
+page_date = f"{year}-{month:02d}-14"                  # 👈 노션 페이지 Dutation = 매월 14일
+BILL_TITLE = f"[KT] {month}월 명세서"                 # 이미지 상단 문구
+PAGE_TITLE = "전표처리_휴대전화요금(14일)"             # 👈 노션 페이지 제목 (고정)
 
-# ============ 1. 명세서 고정 값 (Secret BILL_CONFIG로 덮어쓰기 가능) ============
+# ============ 1. 명세서 값 ============
 DEFAULTS = {
-    "amount": "76,140",                # 납부/이용 금액
+    "amount": "76,140",
     "service_no": "010-26**-*658",
     "customer": "장정*",
     "bill_no": "92029089459",
-    "installment": "76,147",           # 단말기 분할상환금
-    "discount": "-7",                  # 할인받으신금액
+    "installment": "76,147",
+    "discount": "-7",
     "card_owner": "장정*",
     "card_name": "신한카드",
     "card_no": "542879*********8",
@@ -48,12 +50,12 @@ json_headers = {
     "Content-Type": "application/json",
 }
 
-# ============ 2. 이미지 렌더링 (스크린샷과 동일한 다크 포맷) ============
+# ============ 2. 이미지 렌더링 ============
 W = 1080
 MARGIN_X, MARGIN_Y = 72, 90
 FONT_SIZE = 40
 LINE_H, BLANK_H = 66, 46
-BG, FG = (18, 18, 20), (232, 232, 234)     # 거의 검정 / 밝은 회색
+BG, FG = (18, 18, 20), (232, 232, 234)
 
 FD = Path("assets/fonts")
 if not (FD / "NanumGothic.ttf").exists():
@@ -61,10 +63,9 @@ if not (FD / "NanumGothic.ttf").exists():
 f_reg = ImageFont.truetype(str(FD / "NanumGothic.ttf"), FONT_SIZE)
 f_bold = ImageFont.truetype(str(FD / "NanumGothic-Bold.ttf"), FONT_SIZE)
 
-# style: r=일반, bu=굵게+밑줄, u=밑줄   ← 스크린샷의 강조 위치 그대로
 content = [
     [("[Web발신]", "r")],
-    [(f"[KT] {month}월 명세서", "r")],                      # 👈 월 자동
+    [(BILL_TITLE, "r")],
     None,
     [(f"납부하실 금액 : {CFG['amount']} 원", "r")],
     [("이용기간 : ~", "r")],
@@ -79,7 +80,7 @@ content = [
     [(f"할인받으신금액 : {CFG['discount']} 원", "r")],
     None,
     [("[납부정보]", "r")],
-    [("납기일 : ", "r"), (due_date, "bu")],                 # 👈 그 달의 마지막 날
+    [("납기일 : ", "r"), (due_date, "bu")],
     [(f"카드주 : {CFG['card_owner']}", "r")],
     [(f"카드명 : {CFG['card_name']}", "r")],
     [(f"카드번호 : {CFG['card_no']}", "r")],
@@ -105,7 +106,7 @@ for line in content:
         font = f_bold if "b" in style else f_reg
         d.text((x, y), text, font=font, fill=FG)
         w = d.textlength(text, font=font)
-        if "u" in style:                                  # 밑줄 직접 그리기
+        if "u" in style:
             ascent, _ = font.getmetrics()
             uy = y + ascent + 6
             d.line([(x, uy), (x + w, uy)], fill=FG, width=3)
@@ -117,26 +118,35 @@ out.parent.mkdir(exist_ok=True)
 img.save(out, optimize=True)
 print(f"✅ {out} ({W}x{H}) / 납기일 {due_date}")
 
-# ============ 3. Notion 업로드 (공식 3단계, 이전과 동일) ============
+# ============ 3. Notion 업로드 ============
+# ① 업로드 객체
 r = requests.post(f"{API}/file_uploads", headers=json_headers,
                   json={"filename": out.name, "content_type": "image/png"})
 r.raise_for_status()
 upload_id = r.json()["id"]
 
+# ② 파일 전송
 send_headers = {"Authorization": f"Bearer {NOTION_TOKEN}", "Notion-Version": VERSION}
-with out.open("rb") as f:          # ⚠️ Content-Type 수동 지정 금지
+with out.open("rb") as f:
     s = requests.post(f"{API}/file_uploads/{upload_id}/send",
                       headers=send_headers,
                       files={"file": (out.name, f, "image/png")})
     s.raise_for_status()
 
+# ③ 페이지 생성 — 스크린샷의 속성 그대로
+TITLE_PROP = os.environ.get("NOTION_TITLE_PROP", "이름")   # 👈 DB의 Title 속성명 (다르면 Secret으로 덮어쓰기)
+
+properties = {
+    TITLE_PROP:  {"title": [{"text": {"content": PAGE_TITLE}}]},
+    "Dutation":  {"date": {"start": page_date}},           # 매월 14일
+    "카테고리":  {"select": {"name": "사내/행정"}},
+    "상태":      {"status": {"name": "시작 전"}},
+    "우선순위":  {"select": {"name": "상"}},
+}
+
 payload = {
     "parent": {"database_id": DATABASE_ID},
-    "properties": {
-        "Name": {"title": [{"text": {"content": TITLE}}]},
-        "Month": {"number": month},
-        "Date": {"date": {"start": now.date().isoformat()}},
-    },
+    "properties": properties,
     "children": [{
         "object": "block",
         "type": "image",
@@ -144,10 +154,12 @@ payload = {
             "type": "file_upload",
             "file_upload": {"id": upload_id},
             "caption": [{"type": "text",
-                         "text": {"content": f"{year}-{month:02d} / 납기일 {due_date}"}}],
+                         "text": {"content": f"{year}년 {month}월 / 납기일 {due_date}"}}],
         },
     }],
 }
 p = requests.post(f"{API}/pages", headers=json_headers, json=payload)
+if p.status_code >= 400:
+    print("❌ Notion 응답:", p.status_code, p.text)
 p.raise_for_status()
 print(f"🚀 Notion → {p.json()['url']}")
