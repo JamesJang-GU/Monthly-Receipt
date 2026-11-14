@@ -1,0 +1,57 @@
+name: Monthly 13th → KT Bill → Notion
+
+on:
+  schedule:
+    - cron: "0 0 13 * *"        # KST 13일 09:00
+  workflow_dispatch:
+    inputs:
+      month:
+        description: "강제 월 (1~12, 비우면 실행 월)"
+        required: false
+        type: string
+      year:
+        description: "강제 연도 (예: 2026)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: monthly-kt-bill
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    env:
+      TZ: Asia/Seoul
+      NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+      NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+      BILL_CONFIG: ${{ secrets.BILL_CONFIG }}
+      FORCE_MONTH: ${{ inputs.month }}
+      FORCE_YEAR: ${{ inputs.year }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 한글 폰트 다운로드 (필수)
+        run: |
+          mkdir -p assets/fonts
+          curl -fsSL -o assets/fonts/NanumGothic.ttf \
+            https://github.com/google/fonts/raw/main/ofl/nanumgothic/NanumGothic-Regular.ttf
+          curl -fsSL -o assets/fonts/NanumGothic-Bold.ttf \
+            https://github.com/google/fonts/raw/main/ofl/nanumgothic/NanumGothic-Bold.ttf
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+      - run: python scripts/main.py
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kt-bill-${{ github.run_number }}
+          path: out/*.png
+          retention-days: 90
