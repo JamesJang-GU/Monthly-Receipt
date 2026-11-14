@@ -1,4 +1,4 @@
-name: Monthly 13th → KT Bill → Notion
+name: Monthly Phone Billing 
 
 on:
   schedule:
@@ -48,7 +48,7 @@ jobs:
           cache: pip
 
       - run: pip install -r requirements.txt
-      - run: python scripts/main.py
+      - run: python main.py
 
       - uses: actions/upload-artifact@v4
         with:
